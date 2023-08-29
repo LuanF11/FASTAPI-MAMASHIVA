@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel
@@ -30,6 +30,19 @@ class Usuario(Base):
     senha = Column(String)
     telefone = Column(String)
 
+class Endereco(Base):
+    __tablename__ = "endereco"
+
+    id = Column(Integer, primary_key=True, index=True)
+    endereco_rua = Column(String)
+    endereco_numero = Column(String)
+    endereco_bairro = Column(String)
+    endereco_cidade = Column(String)
+    endereco_estado = Column(String)
+    fk_usuario_id = Column(Integer, ForeignKey("usuarios.id"))
+
+
+
 # Cria as tabelas no banco de dados
 Base.metadata.create_all(bind=engine)
 
@@ -48,6 +61,84 @@ class UsuarioCreate(BaseModel):
     email: str
     senha: str
     telefone: str
+
+# Define o modelo Pydantic para a saída de informações do endereço
+class EnderecoOut(BaseModel):
+    id: int
+    endereco_rua: str
+    endereco_numero: str
+    endereco_bairro: str
+    endereco_cidade: str
+    endereco_estado: str
+    fk_usuario_id: int
+
+# Define o modelo Pydantic para a entrada de informações ao criar um endereço
+class EnderecoCreate(BaseModel):
+    endereco_rua: str
+    endereco_numero: str
+    endereco_bairro: str
+    endereco_cidade: str
+    endereco_estado: str
+    fk_usuario_id: int
+
+# Define a rota POST para criar um endereço
+@app.post("/enderecos/", response_model=EnderecoOut)
+def criar_endereco(endereco: EnderecoCreate):
+    db = SessionLocal()
+    # Verifica se o usuário com o ID especificado existe
+    usuario = db.query(Usuario).filter(Usuario.id == endereco.fk_usuario_id).first()
+    if usuario is None:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    db_endereco = Endereco(**endereco.dict())
+    db.add(db_endereco)
+    db.commit()
+    db.refresh(db_endereco)
+    return db_endereco
+
+# Define a rota GET para ler informações de um endereço pelo ID
+@app.get("/enderecos/{endereco_id}", response_model=EnderecoOut)
+def ler_endereco(endereco_id: int):
+    db = SessionLocal()
+    endereco = db.query(Endereco).filter(Endereco.id == endereco_id).first()
+    if endereco is None:
+        raise HTTPException(status_code=404, detail="Endereço não encontrado")
+    return endereco
+
+# Define a rota PUT para atualizar um endereço pelo ID
+@app.put("/enderecos/{endereco_id}", response_model=EnderecoOut)
+def atualizar_endereco(endereco_id: int, endereco: EnderecoCreate):
+    db = SessionLocal()
+    # Verifica se o usuário com o ID especificado existe
+    usuario = db.query(Usuario).filter(Usuario.id == endereco.fk_usuario_id).first()
+    if usuario is None:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    endereco_db = db.query(Endereco).filter(Endereco.id == endereco_id).first()
+    if endereco_db is None:
+        raise HTTPException(status_code=404, detail="Endereço não encontrado")
+
+    endereco_db.endereco_rua = endereco.endereco_rua
+    endereco_db.endereco_numero = endereco.endereco_numero
+    endereco_db.endereco_bairro = endereco.endereco_bairro
+    endereco_db.endereco_cidade = endereco.endereco_cidade
+    endereco_db.endereco_estado = endereco.endereco_estado
+    endereco_db.fk_usuario_id = endereco.fk_usuario_id
+
+    db.commit()
+    db.refresh(endereco_db)
+    return endereco_db
+
+# Define a rota DELETE para deletar um endereço pelo ID
+@app.delete("/enderecos/{endereco_id}")
+def deletar_endereco(endereco_id: int):
+    db = SessionLocal()
+    endereco_db = db.query(Endereco).filter(Endereco.id == endereco_id).first()
+    if endereco_db is None:
+        raise HTTPException(status_code=404, detail="Endereço não encontrado")
+    db.delete(endereco_db)
+    db.commit()
+    return {"message": "Endereço deletado com sucesso"}
 
 # Define a rota POST para criar um usuário
 @app.post("/usuarios/", response_model=UsuarioOut)
@@ -103,4 +194,5 @@ def autenticar_usuario(usuario_credenciais: UsuarioCreate):
     if usuario is None:
         raise HTTPException(status_code=401, detail="Autenticação falhou")
     return usuario
+
 
