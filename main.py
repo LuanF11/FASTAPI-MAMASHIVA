@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
+from fastapi import FastAPI, HTTPException, APIRouter
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Enum
 from sqlalchemy.orm import sessionmaker
+from datetime import date
 from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel
 
@@ -18,6 +19,17 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Cria uma classe base declarativa para definir modelos do SQLAlchemy
 Base = declarative_base()
+
+# Define a classe de modelo do SQLAlchemy para a tabela "reservas"
+class Reserva(Base):
+    __tablename__ = "reservas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reserva_data = Column(String)
+    reserva_horario = Column(Enum("7:00", "8:00", "9:00", "10:00", "11:00", "12:00", 
+                                  "13:00", "14:00", "15:00", "16:00", "17:00", 
+                                  name="horario_enum"))
+    fk_usuario_id = Column(Integer, ForeignKey("usuarios.id"))
 
 # Define a classe de modelo do SQLAlchemy para a tabela "usuarios"
 class Usuario(Base):
@@ -81,6 +93,84 @@ class EnderecoCreate(BaseModel):
     endereco_estado: str
     fk_usuario_id: int
 
+# Define o modelo Pydantic para a saída de informações da reserva
+class ReservaOut(BaseModel):
+    id: int
+    reserva_data: str
+    reserva_horario: str
+    fk_usuario_id: int
+
+# Define o modelo Pydantic para a entrada de informações ao criar uma reserva
+class ReservaCreate(BaseModel):
+    reserva_data: str
+    reserva_horario: str
+    fk_usuario_id: int
+
+router_reservas = APIRouter()
+# Define a rota POST para criar uma reserva
+@app.post("/reservas/", response_model=ReservaOut)
+def criar_reserva(reserva: ReservaCreate):
+    db = SessionLocal()
+    # Verifica se o usuário com o ID especificado existe
+    usuario = db.query(Usuario).filter(Usuario.id == reserva.fk_usuario_id).first()
+    if usuario is None:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    db_reserva = Reserva(**reserva.dict())
+    db.add(db_reserva)
+    db.commit()
+    db.refresh(db_reserva)
+    return db_reserva
+
+# Define a rota GET para ler informações de uma reserva pelo ID
+@app.get("/reservas/{reserva_id}", response_model=ReservaOut)
+def ler_reserva(reserva_id: int):
+    db = SessionLocal()
+    reserva = db.query(Reserva).filter(Reserva.id == reserva_id).first()
+    if reserva is None:
+        raise HTTPException(status_code=404, detail="Reserva não encontrada")
+    return reserva
+
+# Define a rota PUT para atualizar uma reserva pelo ID
+@app.put("/reservas/{reserva_id}", response_model=ReservaOut)
+def atualizar_reserva(reserva_id: int, reserva: ReservaCreate):
+    db = SessionLocal()
+    # Verifica se o usuário com o ID especificado existe
+    usuario = db.query(Usuario).filter(Usuario.id == reserva.fk_usuario_id).first()
+    if usuario is None:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    # Verifica se a data da reserva é válida
+    if reserva.reserva_horario not in ["7:00", "8:00", "9:00", "10:00", "11:00", "12:00", 
+                                  "13:00", "14:00", "15:00", "16:00", "17:00"]:
+        raise HTTPException(status_code=400, detail="Horário inválido")
+
+    # Verifica se a reserva com o ID especificado existe
+    reserva_db = db.query(Reserva).filter(Reserva.id == reserva_id).first()
+    if reserva_db is None:
+        raise HTTPException(status_code=404, detail="Reserva não encontrada")
+
+    reserva_db.reserva_data = reserva.reserva_data
+    reserva_db.reserva_horario = reserva.reserva_horario
+    reserva_db.fk_usuario_id = reserva.fk_usuario_id
+
+    db.commit()
+    db.refresh(reserva_db)
+    return reserva_db
+
+# Define a rota DELETE para deletar uma reserva pelo ID
+@app.delete("/reservas/{reserva_id}")
+def deletar_reserva(reserva_id: int):
+    db = SessionLocal()
+    reserva_db = db.query(Reserva).filter(Reserva.id == reserva_id).first()
+    if reserva_db is None:
+        raise HTTPException(status_code=404, detail="Reserva não encontrada")
+    db.delete(reserva_db)
+    db.commit()
+    return {"message": "Reserva deletada com sucesso"}
+
+
+router_enderecos = APIRouter()
 # Define a rota POST para criar um endereço
 @app.post("/enderecos/", response_model=EnderecoOut)
 def criar_endereco(endereco: EnderecoCreate):
