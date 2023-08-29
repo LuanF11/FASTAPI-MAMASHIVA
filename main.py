@@ -67,3 +67,40 @@ def ler_usuario(usuario_id: int):
     if usuario is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     return usuario
+
+# Define a rota PUT para atualizar um usuário pelo ID
+@app.put("/usuarios/{usuario_id}", response_model=UsuarioOut)
+def atualizar_usuario(usuario_id: int, usuario: UsuarioCreate):
+    db = SessionLocal()
+    usuario_db = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+    if usuario_db is None:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    usuario_db.cpf = usuario.cpf
+    usuario_db.nome = usuario.nome
+    usuario_db.email = usuario.email
+    usuario_db.senha = usuario.senha
+    usuario_db.telefone = usuario.telefone
+    db.commit()
+    db.refresh(usuario_db)
+    return usuario_db
+
+# Define a rota DELETE para deletar um usuário pelo ID
+@app.delete("/usuarios/{usuario_id}")
+def deletar_usuario(usuario_id: int):
+    db = SessionLocal()
+    usuario_db = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+    if usuario_db is None:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    db.delete(usuario_db)
+    db.commit()
+    return {"message": "Usuário deletado com sucesso"}
+
+# Define a rota POST para autenticar um usuário
+@app.post("/usuarios/authenticate/", response_model=UsuarioOut)
+def autenticar_usuario(usuario_credenciais: UsuarioCreate):
+    db = SessionLocal()
+    usuario = db.query(Usuario).filter(Usuario.email == usuario_credenciais.email, Usuario.senha == usuario_credenciais.senha).first()
+    if usuario is None:
+        raise HTTPException(status_code=401, detail="Autenticação falhou")
+    return usuario
+
