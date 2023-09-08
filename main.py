@@ -1,288 +1,87 @@
-from fastapi import FastAPI, HTTPException, APIRouter
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Enum
-from sqlalchemy.orm import sessionmaker
-from datetime import date
-from sqlalchemy.ext.declarative import declarative_base
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Depends
+from sqlalchemy.orm import Session
 
-# Cria uma instância do FastAPI
+from models.usuario import Usuario
+from schemas.usuario import UsuarioOut, UsuarioCreate
+from controllers.usuario import criar_usuario, ler_usuario, atualizar_usuario, deletar_usuario, autenticar_usuario
+
+from models.endereco import Endereco
+from schemas.endereco import EnderecoOut, EnderecoCreate
+from controllers.endereco import criar_endereco, ler_endereco, atualizar_endereco, deletar_endereco
+
+from models.reserva import Reserva
+from schemas.reserva import ReservaOut, ReservaCreate
+from controllers.reserva import criar_reserva, ler_reserva, atualizar_reserva, deletar_reserva
+
+from database.database import engine, get_db
+
 app = FastAPI()
 
-# URL de conexão com o banco de dados SQLite
-DATABASE_URL = "sqlite:///./teste.db"
-
-# Cria uma conexão com o banco de dados
-engine = create_engine(DATABASE_URL)
-
-# Cria uma fábrica de sessões do banco de dados
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Cria uma classe base declarativa para definir modelos do SQLAlchemy
-Base = declarative_base()
-
-# Define a classe de modelo do SQLAlchemy para a tabela "reservas"
-class Reserva(Base):
-    __tablename__ = "reservas"
-
-    id = Column(Integer, primary_key=True, index=True)
-    reserva_data = Column(String)
-    reserva_horario = Column(Enum("7:00", "8:00", "9:00", "10:00", "11:00", "12:00", 
-                                  "13:00", "14:00", "15:00", "16:00", "17:00", 
-                                  name="horario_enum"))
-    fk_usuario_id = Column(Integer, ForeignKey("usuarios.id"))
-
-# Define a classe de modelo do SQLAlchemy para a tabela "usuarios"
-class Usuario(Base):
-    __tablename__ = "usuarios"
-
-    id = Column(Integer, primary_key=True, index=True)
-    cpf = Column(String, unique=True, index=True)
-    nome = Column(String)
-    email = Column(String, unique=True, index=True)
-    senha = Column(String)
-    telefone = Column(String)
-
-class Endereco(Base):
-    __tablename__ = "endereco"
-
-    id = Column(Integer, primary_key=True, index=True)
-    endereco_rua = Column(String)
-    endereco_numero = Column(String)
-    endereco_bairro = Column(String)
-    endereco_cidade = Column(String)
-    endereco_estado = Column(String)
-    fk_usuario_id = Column(Integer, ForeignKey("usuarios.id"))
-
-
-
-# Cria as tabelas no banco de dados
+from database.database import Base
 Base.metadata.create_all(bind=engine)
 
-# Define o modelo Pydantic para a saída de informações do usuário
-class UsuarioOut(BaseModel):
-    id: int
-    cpf: str
-    nome: str
-    email: str
-    telefone: str
 
-# Define o modelo Pydantic para a entrada de informações ao criar um usuário
-class UsuarioCreate(BaseModel):
-    cpf: str
-    nome: str
-    email: str
-    senha: str
-    telefone: str
-
-# Define o modelo Pydantic para a saída de informações do endereço
-class EnderecoOut(BaseModel):
-    id: int
-    endereco_rua: str
-    endereco_numero: str
-    endereco_bairro: str
-    endereco_cidade: str
-    endereco_estado: str
-    fk_usuario_id: int
-
-# Define o modelo Pydantic para a entrada de informações ao criar um endereço
-class EnderecoCreate(BaseModel):
-    endereco_rua: str
-    endereco_numero: str
-    endereco_bairro: str
-    endereco_cidade: str
-    endereco_estado: str
-    fk_usuario_id: int
-
-# Define o modelo Pydantic para a saída de informações da reserva
-class ReservaOut(BaseModel):
-    id: int
-    reserva_data: str
-    reserva_horario: str
-    fk_usuario_id: int
-
-# Define o modelo Pydantic para a entrada de informações ao criar uma reserva
-class ReservaCreate(BaseModel):
-    reserva_data: str
-    reserva_horario: str
-    fk_usuario_id: int
-
-router_reservas = APIRouter()
-# Define a rota POST para criar uma reserva
-@app.post("/reservas/", response_model=ReservaOut)
-def criar_reserva(reserva: ReservaCreate):
-    db = SessionLocal()
-    # Verifica se o usuário com o ID especificado existe
-    usuario = db.query(Usuario).filter(Usuario.id == reserva.fk_usuario_id).first()
-    if usuario is None:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-
-    db_reserva = Reserva(**reserva.dict())
-    db.add(db_reserva)
-    db.commit()
-    db.refresh(db_reserva)
-    return db_reserva
-
-# Define a rota GET para ler informações de uma reserva pelo ID
-@app.get("/reservas/{reserva_id}", response_model=ReservaOut)
-def ler_reserva(reserva_id: int):
-    db = SessionLocal()
-    reserva = db.query(Reserva).filter(Reserva.id == reserva_id).first()
-    if reserva is None:
-        raise HTTPException(status_code=404, detail="Reserva não encontrada")
-    return reserva
-
-# Define a rota PUT para atualizar uma reserva pelo ID
-@app.put("/reservas/{reserva_id}", response_model=ReservaOut)
-def atualizar_reserva(reserva_id: int, reserva: ReservaCreate):
-    db = SessionLocal()
-    # Verifica se o usuário com o ID especificado existe
-    usuario = db.query(Usuario).filter(Usuario.id == reserva.fk_usuario_id).first()
-    if usuario is None:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    
-    # Verifica se a data da reserva é válida
-    if reserva.reserva_horario not in ["7:00", "8:00", "9:00", "10:00", "11:00", "12:00", 
-                                  "13:00", "14:00", "15:00", "16:00", "17:00"]:
-        raise HTTPException(status_code=400, detail="Horário inválido")
-
-    # Verifica se a reserva com o ID especificado existe
-    reserva_db = db.query(Reserva).filter(Reserva.id == reserva_id).first()
-    if reserva_db is None:
-        raise HTTPException(status_code=404, detail="Reserva não encontrada")
-
-    reserva_db.reserva_data = reserva.reserva_data
-    reserva_db.reserva_horario = reserva.reserva_horario
-    reserva_db.fk_usuario_id = reserva.fk_usuario_id
-
-    db.commit()
-    db.refresh(reserva_db)
-    return reserva_db
-
-# Define a rota DELETE para deletar uma reserva pelo ID
-@app.delete("/reservas/{reserva_id}")
-def deletar_reserva(reserva_id: int):
-    db = SessionLocal()
-    reserva_db = db.query(Reserva).filter(Reserva.id == reserva_id).first()
-    if reserva_db is None:
-        raise HTTPException(status_code=404, detail="Reserva não encontrada")
-    db.delete(reserva_db)
-    db.commit()
-    return {"message": "Reserva deletada com sucesso"}
-
-
-router_enderecos = APIRouter()
-# Define a rota POST para criar um endereço
-@app.post("/enderecos/", response_model=EnderecoOut)
-def criar_endereco(endereco: EnderecoCreate):
-    db = SessionLocal()
-    # Verifica se o usuário com o ID especificado existe
-    usuario = db.query(Usuario).filter(Usuario.id == endereco.fk_usuario_id).first()
-    if usuario is None:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-
-    db_endereco = Endereco(**endereco.dict())
-    db.add(db_endereco)
-    db.commit()
-    db.refresh(db_endereco)
-    return db_endereco
-
-# Define a rota GET para ler informações de um endereço pelo ID
-@app.get("/enderecos/{endereco_id}", response_model=EnderecoOut)
-def ler_endereco(endereco_id: int):
-    db = SessionLocal()
-    endereco = db.query(Endereco).filter(Endereco.id == endereco_id).first()
-    if endereco is None:
-        raise HTTPException(status_code=404, detail="Endereço não encontrado")
-    return endereco
-
-# Define a rota PUT para atualizar um endereço pelo ID
-@app.put("/enderecos/{endereco_id}", response_model=EnderecoOut)
-def atualizar_endereco(endereco_id: int, endereco: EnderecoCreate):
-    db = SessionLocal()
-    # Verifica se o usuário com o ID especificado existe
-    usuario = db.query(Usuario).filter(Usuario.id == endereco.fk_usuario_id).first()
-    if usuario is None:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-
-    endereco_db = db.query(Endereco).filter(Endereco.id == endereco_id).first()
-    if endereco_db is None:
-        raise HTTPException(status_code=404, detail="Endereço não encontrado")
-
-    endereco_db.endereco_rua = endereco.endereco_rua
-    endereco_db.endereco_numero = endereco.endereco_numero
-    endereco_db.endereco_bairro = endereco.endereco_bairro
-    endereco_db.endereco_cidade = endereco.endereco_cidade
-    endereco_db.endereco_estado = endereco.endereco_estado
-    endereco_db.fk_usuario_id = endereco.fk_usuario_id
-
-    db.commit()
-    db.refresh(endereco_db)
-    return endereco_db
-
-# Define a rota DELETE para deletar um endereço pelo ID
-@app.delete("/enderecos/{endereco_id}")
-def deletar_endereco(endereco_id: int):
-    db = SessionLocal()
-    endereco_db = db.query(Endereco).filter(Endereco.id == endereco_id).first()
-    if endereco_db is None:
-        raise HTTPException(status_code=404, detail="Endereço não encontrado")
-    db.delete(endereco_db)
-    db.commit()
-    return {"message": "Endereço deletado com sucesso"}
-
-# Define a rota POST para criar um usuário
+# Rota para criar um usuário
 @app.post("/usuarios/", response_model=UsuarioOut)
-def criar_usuario(usuario: UsuarioCreate):
-    db = SessionLocal()
-    db_usuario = Usuario(**usuario.dict())  # Cria um objeto Usuario a partir dos dados do modelo Pydantic
-    db.add(db_usuario)
-    db.commit()
-    db.refresh(db_usuario)
-    return db_usuario
+def criar_usuario_endpoint(usuario: UsuarioCreate, db: Session = Depends(get_db)):
+    return criar_usuario(db, usuario)
 
-# Define a rota GET para ler informações de um usuário pelo ID
+# Rota para ler informações de um usuário pelo ID
 @app.get("/usuarios/{usuario_id}", response_model=UsuarioOut)
-def ler_usuario(usuario_id: int):
-    db = SessionLocal()
-    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
-    if usuario is None:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    return usuario
+def ler_usuario_endpoint(usuario_id: str, db: Session = Depends(get_db)):
+    return ler_usuario(db, usuario_id)
 
-# Define a rota PUT para atualizar um usuário pelo ID
+# Rota para atualizar um usuário pelo ID
 @app.put("/usuarios/{usuario_id}", response_model=UsuarioOut)
-def atualizar_usuario(usuario_id: int, usuario: UsuarioCreate):
-    db = SessionLocal()
-    usuario_db = db.query(Usuario).filter(Usuario.id == usuario_id).first()
-    if usuario_db is None:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    usuario_db.cpf = usuario.cpf
-    usuario_db.nome = usuario.nome
-    usuario_db.email = usuario.email
-    usuario_db.senha = usuario.senha
-    usuario_db.telefone = usuario.telefone
-    db.commit()
-    db.refresh(usuario_db)
-    return usuario_db
+def atualizar_usuario_endpoint(usuario_id: str, usuario: UsuarioCreate, db: Session = Depends(get_db)):
+    return atualizar_usuario(db, usuario_id, usuario)
 
-# Define a rota DELETE para deletar um usuário pelo ID
+# Rota para deletar um usuário pelo ID
 @app.delete("/usuarios/{usuario_id}")
-def deletar_usuario(usuario_id: int):
-    db = SessionLocal()
-    usuario_db = db.query(Usuario).filter(Usuario.id == usuario_id).first()
-    if usuario_db is None:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    db.delete(usuario_db)
-    db.commit()
-    return {"message": "Usuário deletado com sucesso"}
+def deletar_usuario_endpoint(usuario_id: str, db: Session = Depends(get_db)):
+    return deletar_usuario(db, usuario_id)
 
-# Define a rota POST para autenticar um usuário
+# Rota para autenticar um usuário
 @app.post("/usuarios/authenticate/", response_model=UsuarioOut)
-def autenticar_usuario(usuario_credenciais: UsuarioCreate):
-    db = SessionLocal()
-    usuario = db.query(Usuario).filter(Usuario.email == usuario_credenciais.email, Usuario.senha == usuario_credenciais.senha).first()
-    if usuario is None:
-        raise HTTPException(status_code=401, detail="Autenticação falhou")
-    return usuario
+def autenticar_usuario_endpoint(email: str, senha: str, db: Session = Depends(get_db)):
+    return autenticar_usuario(db, email, senha)
 
+# Rota para criar um endereço
+@app.post("/enderecos/", response_model=EnderecoOut)
+def criar_endereco_endpoint(endereco: EnderecoCreate, db: Session = Depends(get_db)):
+    return criar_endereco(db, endereco)
 
+# Rota para ler informações de um endereço pelo ID
+@app.get("/enderecos/{endereco_id}", response_model=EnderecoOut)
+def ler_endereco_endpoint(endereco_id: str, db: Session = Depends(get_db)):
+    return ler_endereco(db, endereco_id)
+
+# Rota para atualizar um endereço pelo ID
+@app.put("/enderecos/{endereco_id}", response_model=EnderecoOut)
+def atualizar_endereco_endpoint(endereco_id: str, endereco: EnderecoCreate, db: Session = Depends(get_db)):
+    return atualizar_endereco(db, endereco_id, endereco)
+
+# Rota para deletar um endereço pelo ID
+@app.delete("/enderecos/{endereco_id}")
+def deletar_endereco_endpoint(endereco_id: str, db: Session = Depends(get_db)):
+    return deletar_endereco(db, endereco_id)
+
+# Rota para criar uma reserva
+@app.post("/reservas/", response_model=ReservaOut)
+def criar_reserva_endpoint(reserva: ReservaCreate, db: Session = Depends(get_db)):
+    return criar_reserva(db, reserva)
+
+# Rota para ler informações de uma reserva pelo ID
+@app.get("/reservas/{reserva_id}", response_model=ReservaOut)
+def ler_reserva_endpoint(reserva_id: str, db: Session = Depends(get_db)):
+    return ler_reserva(db, reserva_id)
+
+# Rota para atualizar uma reserva pelo ID
+@app.put("/reservas/{reserva_id}", response_model=ReservaOut)
+def atualizar_reserva_endpoint(reserva_id: str, reserva: ReservaCreate, db: Session = Depends(get_db)):
+    return atualizar_reserva(db, reserva_id, reserva)
+
+# Rota para deletar uma reserva pelo ID
+@app.delete("/reservas/{reserva_id}")
+def deletar_reserva_endpoint(reserva_id: str, db: Session = Depends(get_db)):
+    return deletar_reserva(db, reserva_id)
